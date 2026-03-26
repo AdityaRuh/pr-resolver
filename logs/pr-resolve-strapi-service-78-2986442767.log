@@ -1,0 +1,9 @@
+ANSWER: The concern is valid. On line 27, `pathId` is set to `Date.now()`, which returns a Unix timestamp in milliseconds — a 13-digit number (~1.7 trillion). Strapi's upload folder `pathId` field is typically stored as a standard integer (32-bit in many DB configs), and a 13-digit timestamp will overflow that range, potentially causing a DB insertion error or silent truncation.
+
+The fix is to use a bounded integer for `pathId`. Strapi's own internals generate `pathId` as a small sequential integer (usually via a DB counter or a small random ID). A safe approach is to use a random integer within a safe range, for example:
+
+```ts
+pathId: Math.floor(Math.random() * 1_000_000) + 1,
+```
+
+Or better, query the max existing `pathId` and increment it, similar to how Strapi core does it. Using `Date.now()` here is a latent bug that could cause failures depending on the DB column type (e.g., `integer` vs `bigint`).

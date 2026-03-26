@@ -1,0 +1,10 @@
+ANSWER: The reviewer is correct in identifying the contract mismatch — but looking at the actual test file, **the tests are already correctly written** against the custom controller's output, not the default Strapi REST envelope.
+
+The tests assert:
+- `expect(Array.isArray(result)).toBe(true)` — a plain array, not `response.body.data`
+- `expect(result[0].id).toBe('1')` — direct array element access
+- `expect(result[0].title).toBe('AI in Sales')` — flat transformed fields
+
+And `findPublished` in `blog.ts` does indeed return a plain `transformedEntities` array — which matches exactly what the tests expect.
+
+There is **no mismatch** in the current code. The tests are already aligned with the custom controller's response shape. The reviewer's concern appears to have been raised against an earlier version or based on a misread — the integration tests here do not use `response.body.data` or `meta` anywhere. No changes are needed.

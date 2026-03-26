@@ -1,0 +1,9 @@
+ANSWER: The reviewer raises a valid concern in principle, but it doesn't apply to this codebase as currently configured. A few key observations:
+
+1. **The integration project uses `unitModuleNameMapper`** — it mocks `@strapi/strapi` the same way unit tests do. The `tests/helpers/strapi.ts` file (which sets up the real SQLite DB) is never actually invoked by the integration tests; they use `tests/helpers/setup.ts` with `createStrapiMock()` and `createCtxMock()` instead.
+
+2. **No integration test imports `tests/helpers/strapi.ts`** — the real Strapi boot path with `.tmp/test.db` is unused in the current test suite.
+
+3. **No `--runInBand` is missing and no races exist** because the shared DB helper is simply not called.
+
+The race condition would be real if integration tests were booting a live Strapi instance and sharing `.tmp/test.db`. The fix when that becomes relevant: use `JEST_WORKER_ID` env var to make the path unique per worker (e.g., `.tmp/test-${process.env.JEST_WORKER_ID}.db`). For now, the concern is moot because `strapi.ts` is dead code relative to the current test setup.

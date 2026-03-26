@@ -1,0 +1,77 @@
+{
+  "ruh-ai/strapi-service": {
+    "77": {
+      "last_checked": "2026-03-25T12:36:21Z",
+      "processed_comment_ids": [
+        2985474964,
+        2985474965,
+        2985474967,
+        2985474968
+      ],
+      "actions_taken": [
+        {
+          "comment_id": 2985474964,
+          "intent": "QUESTION",
+          "action": "answered",
+          "commit": "",
+          "timestamp": "2026-03-25T12:32:53Z"
+        },
+        {
+          "comment_id": 2985474965,
+          "intent": "CODE_CHANGE",
+          "action": "flagged",
+          "commit": "",
+          "timestamp": "2026-03-25T12:35:31Z"
+        },
+        {
+          "comment_id": 2985474967,
+          "intent": "QUESTION",
+          "action": "answered",
+          "commit": "",
+          "timestamp": "2026-03-25T12:35:58Z"
+        },
+        {
+          "comment_id": 2985474968,
+          "intent": "QUESTION",
+          "action": "answered",
+          "commit": "",
+          "timestamp": "2026-03-25T12:36:21Z"
+        }
+      ]
+    }
+  },
+  "ruh-ai/sdr-backend": {
+    "447": {
+      "last_checked": "2026-03-25T12:36:29Z",
+      "processed_comment_ids": [
+        4115287960
+      ],
+      "actions_taken": [
+        {
+          "comment_id": 4115287960,
+          "intent": "APPROVAL",
+          "action": "skipped",
+          "commit": "",
+          "timestamp": "2026-03-25T12:36:29Z"
+        }
+      ]
+    }
+  },
+  "ruh-ai/sdr-management-mcp": {
+    "44": {
+      "last_checked": "2026-03-25T12:36:33Z",
+      "processed_comment_ids": [
+        4115288332
+      ],
+      "actions_taken": [
+        {
+          "comment_id": 4115288332,
+          "intent": "APPROVAL",
+          "action": "skipped",
+          "commit": "",
+          "timestamp": "2026-03-25T12:36:33Z"
+        }
+      ]
+    }
+  }
+}
