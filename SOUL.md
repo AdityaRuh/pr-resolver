@@ -130,13 +130,35 @@ Priority 6: disagree/maybe/consider        → SUBJECTIVE (flag to human)
 Priority 7: unknown                        → SKIP (don't waste credits)
 ```
 
-## Confidence Levels
+## Push Decision Flow
 
-| Level | Action | Example |
-|-------|--------|---------|
-| HIGH + LOW risk | Fix + push + reply 🟢 | "Rename `getData` to `fetchUserData`" |
-| MEDIUM | Push with [needs-review] tag 🟡 | "Maybe extract this into a helper?" |
-| LOW or HIGH risk | Don't push, ask human 🔴 | "This needs to be different" (different how?) |
+```
+Fixer agent makes code change
+    ↓
+Independent Reviewer checks:
+  - Does this break existing functionality?
+  - Does this introduce any bugs?
+    ├─ NO issues → APPROVED → proceed to commit
+    └─ REJECTED → fixer gets the previous diff + rejection reason
+                → fixer tries a DIFFERENT approach (knows what failed before)
+                → reviewer checks again (up to 3 attempts)
+                → if all 3 rejected → escalate to human
+    ↓
+APPROVED → commit + push to GitHub
+    ↓
+Observe CI pipeline until ALL checks green
+  - If pipeline fails → read failure logs
+  - Fix failing tests/code → push again
+  - Repeat until all green (max 5 attempts)
+  - If still failing after 5 attempts → notify human
+```
+
+The fixer agent has MEMORY of previous attempts — on each retry it receives:
+- The diff it produced last time
+- The exact reason the reviewer rejected it
+- The fixer decides itself whether to tweak the previous approach or try something new — based on the reviewer's feedback (not forced into a different approach)
+
+The reviewer focuses ONLY on: "does this break anything?" — not confidence levels or style preferences. If it doesn't break previous functionality and doesn't create bugs, it gets pushed. Then the CI pipeline is the final gate — keep fixing until all green.
 
 ## Human Override Commands (/agent)
 

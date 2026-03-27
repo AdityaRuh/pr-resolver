@@ -50,6 +50,109 @@ linear_graphql() {
 }
 
 ###############################################################################
+# LLM Context Summarizer [NEW]
+#
+# Reads the raw Linear ticket text and produces a concise 3-sentence summary
+# of the business logic and acceptance criteria. This avoids overwhelming the
+# fixer/reviewer agents with irrelevant Linear/Jira fluff.
+###############################################################################
+
+linear_summarize_context() {
+    local raw_context="$1"
+    [[ -z "$raw_context" ]] && return 1
+
+    # Truncate input to avoid token explosion in the summarizer itself
+    local truncated_input
+    truncated_input=$(echo "$raw_context" | head -c 3000)
+
+    local summarize_prompt
+    summarize_prompt="You are a technical writer summarizing Linear (project management) ticket context for a code-reviewing AI agent.
+
+Read the following ticket data and produce a clear, concise summary in EXACTLY 3 sentences:
+1. What is the goal of this ticket? (the business problem being solved)
+2. What are the key acceptance criteria or constraints the code must satisfy?
+3. What should the PR reviewer know to evaluate whether a code comment is valid or out of scope?
+
+Be specific and technical. Avoid filler phrases. Do not include the ticket ID or title in your output.
+
+Ticket data:
+\"\"\"${truncated_input}\"\"\"
+
+SUMMARY:"
+
+    local summary
+    summary=$(timeout "${LLM_SUMMARIZE_TIMEOUT:-20}" openclaw agent \
+        --agent pr-resolver \
+        --message "$summarize_prompt" \
+        --timeout "${LLM_SUMMARIZE_TIMEOUT:-20}" \
+        2>/dev/null) || true
+
+    if [[ -z "$summary" ]]; then
+        # Graceful degradation: return original truncated context if LLM fails
+        echo "$raw_context"
+        return 0
+    fi
+
+    echo "$summary"
+}
+
+###############################################################################
+# Fetch issues by state and extract attached GitHub PRs [NEW]
+###############################################################################
+
+linear_get_issues_by_state() {
+    local state_name="$1"
+    [[ -z "$state_name" ]] && return 1
+
+    local query='
+    {
+      issues(filter: { state: { name: { eq: "'"$state_name"'" } } }) {
+        nodes {
+          identifier
+          title
+          description
+          branchName
+          attachments {
+            nodes {
+              sourceType
+              url
+            }
+          }
+          comments(last: 5) {
+            nodes {
+              body
+            }
+          }
+        }
+      }
+    }'
+
+    local response
+    response=$(linear_graphql "$query") || return 1
+
+    # Output Format: TicketID|RepoName|PRNumber|BranchName|TicketTitle
+    # We scan description, comments, and attachments for GitHub PR URLs
+    echo "$response" | jq -r '
+      .data.issues.nodes[] |
+      .identifier as $ticketId |
+      .title as $title |
+      .branchName as $branch |
+      # Collect description, all comment bodies, and all attachment URLs
+      [
+        .description,
+        (.comments.nodes[].body // empty),
+        (.attachments.nodes[].url // empty)
+      ] |
+      # Join them into one text block and scan for GitHub PR URLs
+      join(" ") |
+      scan("(?:https?://)?(?:www\\.)?github\\.com/[^/]+/[^/]+/pull/[0-9]+") |
+      # Capture the components from each found URL
+      capture("(?:https?://)?(?:www\\.)?github\\.com/(?<org>[^/]+)/(?<repo>[^/]+)/pull/(?<pr>[0-9]+)") |
+      "\( $ticketId )|\( .org )/\( .repo )|\( .pr )|\( $branch // "" )|\( $title )"
+    ' 2>/dev/null | sort -u
+}
+
+###############################################################################
 # Fetch issue details by identifier (e.g., RP-358) — uses ClawHub skill
 ###############################################################################
 
@@ -182,40 +285,44 @@ linear_format_rich_context() {
     pr_links=$(echo "$rich_json" | jq -r '[.attachments.nodes[] | select(.sourceType == "github") | .title + " → " + .url] | join("\n  - ")' 2>/dev/null)
     [[ -z "$pr_links" ]] && pr_links="none"
 
-    cat <<EOF
-## Linear Ticket Context (Rich)
-
+    # --- Build the full raw context block ---
+    local raw_context
+    raw_context=$(cat <<EOF
 **${identifier}: ${title}**
-- **State:** ${state} | **Priority:** ${priority} | **Assignee:** ${assignee}
-- **Labels:** ${labels}
-- **Parent:** ${parent}
+- State: ${state} | Priority: ${priority} | Assignee: ${assignee}
+- Labels: ${labels} | Parent: ${parent}
 
-### Description
+Description:
 ${description}
 
-### Acceptance Criteria
-$(echo "$description" | grep -iE '(accept|criteria|requirement|must|should|given|when|then|todo|checklist|\[ \]|\[x\])' | head -10)
+Related Issues: ${relations}
+Sub-tasks: ${subtasks}
 
-### Related Issues
-  - ${relations}
-
-### Sub-tasks
-  - ${subtasks}
-
-### Recent Team Comments
+Recent Team Comments:
   - ${comments}
 
-### Linked PRs
+Linked PRs:
   - ${pr_links}
+EOF
+)
+
+    # Pipe through LLM summarizer to produce a compact 3-sentence context block
+    local summary
+    summary=$(linear_summarize_context "$raw_context") || summary="$raw_context"
+
+    cat <<EOF
+## Linear Ticket Context — ${identifier}: ${title}
+
+${summary}
 
 ---
 
-**Use this context to evaluate review comments:**
+**Goal of this PR:** Implement ${title} as described above.
+**Evaluate comments against this context:**
 - **Valid**: Aligns with ticket intent or is a genuine code quality issue
 - **Invalid**: Contradicts ticket requirements or is out of scope
 - **Actionable**: Specific enough to implement (clear expected outcome)
 - **Not actionable**: Vague, opinion-based, or requires a product decision
-- **Goal of this PR:** Implement ${title} as described above
 Only implement changes that are both VALID and ACTIONABLE.
 EOF
 }

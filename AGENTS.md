@@ -1,15 +1,18 @@
-# Agents — PR Resolver v2
+# Agents — PR Resolver v3 (LLM-Upgraded)
 
 ## Agent Portfolio
 
 | Agent | Role | Trigger | Cost |
 |-------|------|---------|------|
-| Comment Classifier | Classify comment intent (bash, no LLM) | Every comment | FREE |
+| Linear State Poller | Poll Linear for 'Require Changes' tickets | Every 30 min | FREE |
+| Comment Classifier | Classify comment intent (regex + LLM) | Every comment | LLM Credits (fast model) |
 | Agent Command Handler | Process /agent override commands | AGENT_COMMAND intent | FREE |
+| Context Summarizer | Summarize Linear ticket via LLM | Every PR with ticket branch | LLM Credits (fast model) |
 | Linear Context Fetcher | Fetch rich ticket context via API | Every PR with ticket branch | FREE |
 | Diff Extractor | Extract PR diff + changed files | Before LLM invocation | FREE |
 | Idempotency Checker | Detect duplicate fixes via hash | Before LLM invocation | FREE |
-| Code Fixer | Read context, make fix, validate, push | CODE_CHANGE / NITPICK / EXPLICIT | LLM Credits |
+| Code Fixer | Read context, make fix, validate (no commit) | CODE_CHANGE / NITPICK / EXPLICIT | LLM Credits |
+| Independent Code Reviewer | Verify fixer diff before commit | After fixer agent output | LLM Credits |
 | Question Answerer | Read context, answer question | QUESTION intent | LLM Credits |
 | Confidence Scorer | Assess fix confidence + risk | After agent output | Included in LLM |
 | Retry Manager | Retry transient failures with backoff | On timeout/unclear | LLM Credits |
@@ -18,6 +21,7 @@
 | Budget Guard | Enforce per-hour, per-cycle limits | Every fix attempt | FREE |
 | Metrics Recorder | Track success rate, fix times, failures | Every action | FREE |
 | Conflict Flagger | Detect subjective/unclear, notify human | SUBJECTIVE / LOW confidence | FREE |
+| Linear State Transitioner | Move ticket to 'Code Review' after all resolved | All comments resolved + CI green | FREE |
 
 ## Monitored Repos
 
@@ -56,15 +60,19 @@ repos:
 
 ## Sub-Agent Details
 
-### Comment Classifier
+### Comment Classifier [UPGRADED — LLM-backed]
 ```
-Method:    Bash keyword matching (no LLM)
-Cost:      Zero credits
+Method:    Hybrid: regex (SELF, CI_BOT, AGENT_COMMAND) + LLM (all others)
+Cost:      LLM credits (fast model, ~15s timeout) for semantic classification
+           Zero credits for regex tier (bot/CI/command detection)
 Input:     Comment body text
 Output:    Intent classification string
-Speed:     <1ms per comment
+Speed:     <1ms (regex tier) / <15s (LLM tier)
 Intents:   SELF, CI_BOT, AGENT_COMMAND, EXPLICIT_REQUEST, CODE_CHANGE,
            QUESTION, APPROVAL, SUBJECTIVE, NITPICK, UNKNOWN
+Upgrade:   Handles sarcasm, implicit requests, and nuanced language that
+           keyword matching misses. Highest ROI upgrade for reducing false
+           positives and wasted fixer credits.
 ```
 
 ### Agent Command Handler [NEW]
@@ -89,6 +97,18 @@ Requires:  LINEAR_API_KEY env var
 Fallback:  Basic context → no context (graceful degradation)
 ```
 
+### Context Summarizer [NEW — LLM-backed]
+```
+Method:    OpenClaw agent (fast LLM) — reads raw Linear ticket data
+Cost:      LLM credits (fast model, ~20s timeout)
+Input:     Raw ticket text (description, comments, relations, criteria)
+Output:    3-sentence technical summary of business logic + acceptance criteria
+Speed:     <20s
+Purpose:   Avoid overwhelming fixer/reviewer agents with irrelevant Linear fluff.
+           Saves context window space and reduces hallucination risk.
+Fallback:  Returns original truncated context if LLM fails (graceful degradation)
+```
+
 ### Diff Extractor [NEW]
 ```
 Method:    gh CLI (no LLM)
@@ -110,18 +130,37 @@ Storage:   state/fix-signatures.json
 Purpose:   Prevent duplicate fixes when same issue raised in multiple comments
 ```
 
-### Code Fixer [ENHANCED]
+### Code Fixer [UPGRADED — no longer commits]
 ```
 Method:    OpenClaw agent (LLM)
 Cost:      Credits per invocation
-Input:     Linear context + PR diff + comment + file context
-Output:    Code fix → confidence/risk assessment → commit → push → reply
+Input:     Summarized Linear context + PR diff + comment + file context
+Output:    Code fix on disk + confidence/risk assessment (NO commit/push)
 Timeout:   600s (10 min)
 Retries:   Up to 2 (transient failures only)
 Backoff:   30s, 60s (exponential)
 Skill:     skills/pr-comment-resolver/SKILL.md
-New:       Outputs CONFIDENCE + RISK before committing
-           Only pushes if confidence >= MEDIUM and risk <= MEDIUM
+Upgrade:   Fixer modifies files and runs tests but does NOT commit.
+           Commit/push is orchestrated by bash after independent review.
+           Outputs CONFIDENCE + RISK for the reviewer to assess.
+```
+
+### Independent Code Reviewer [UPGRADED — impact-focused with retry loop]
+```
+Method:    OpenClaw agent (LLM) — separate from fixer
+Cost:      Credits per invocation (up to 3 review cycles per comment)
+Input:     Original comment + fixer's proposed diff
+Output:    APPROVED or REJECTED: <reason>
+Timeout:   120s (2 min)
+Purpose:   Impact analysis gate — checks if the change breaks existing
+           functionality or introduces bugs. Does NOT gate on confidence
+           level or style preferences. Only rejects if there's a concrete
+           functional issue.
+Retry:     On REJECT → fixer receives previous diff + rejection reason
+           → fixer tries a different approach with full context of what
+           it tried before and why it was rejected (up to 3 attempts)
+Action:    APPROVED → commit + push → observe CI pipeline
+           REJECTED 3x → escalate to human with all attempt details
 ```
 
 ### Question Answerer
@@ -134,13 +173,13 @@ Timeout:   120s (2 min)
 Skill:     skills/pr-comment-resolver/SKILL.md
 ```
 
-### Confidence Scorer [NEW]
+### Confidence Scorer [DOWNGRADED — logging only]
 ```
 Method:    Parsed from LLM agent output
 Cost:      Included in Code Fixer invocation
 Input:     Agent's CONFIDENCE + RISK output lines
-Output:    Push decision: auto-push / push-with-tag / block
-Levels:    HIGH+LOW→🟢 / MEDIUM→🟡 / LOW or HIGH risk→🔴
+Output:    Logged to metrics (does NOT gate push decisions)
+Purpose:   Observability — track confidence trends over time
 ```
 
 ### Retry Manager [NEW]
@@ -201,18 +240,38 @@ Output:    Telegram notification + PR reply
 Speed:     <2s per comment
 ```
 
+### Linear State Transitioner [NEW]
+```
+Method:    Linear API via ClawHub skill (no LLM)
+Cost:      Zero credits
+Input:     Ticket ID + resolution status of all PR comments
+Output:    Ticket moved to "Code Review" + transition comment posted
+Trigger:   ALL actionable comments resolved + ZERO failures + CI green
+Speed:     <2s
+Purpose:   Automatically moves the Linear ticket to "Code Review" state
+           once the bot has finished resolving all review comments and the
+           CI pipeline is green. This signals to the human reviewer that
+           the PR is ready for final sign-off.
+```
+
 ## Architecture Diagram
 
 ```
                     ┌──────────────────┐
-                    │   GitHub PRs     │
-                    │  (6 repos)       │
+                    │  Linear Tickets  │
+                    │(Require Changes) │
                     └────────┬─────────┘
-                             │ poll every 5 min
+                             │ poll every 30 min
                              ▼
                     ┌──────────────────┐
-                    │ Comment Classifier│  FREE
-                    │ (bash keywords)   │
+                    │ GitHub PR Mapper │  FREE
+                    │ (Attachments)    │
+                    └────────┬─────────┘
+                             │
+                             ▼
+                    ┌──────────────────┐
+                    │ Comment Classifier│  FAST LLM
+                    │ (regex + LLM)     │  (+ regex FREE tier)
                     └────────┬─────────┘
                              │
               ┌──────────────┼──────────────┐
@@ -228,13 +287,36 @@ Speed:     <2s per comment
                         │ Linear   ││  Diff  ││Idempotency│ FREE
                         │ Context  ││Extract ││  Check    │
                         └────┬─────┘└───┬────┘└────┬─────┘
-                             └──────────┼──────────┘
+                             │          │          │
+                             ▼          │          │
+                     ┌──────────────┐   │          │
+                     │  Context     │   │          │
+                     │  Summarizer  │   │  FAST LLM
+                     │  (LLM)      │   │          │
+                     └──────┬───────┘   │          │
+                            └───────────┼──────────┘
                                         ▼
                               ┌──────────────────┐
-                              │  OpenClaw Agent   │ CREDITS
-                              │  (fix or answer)  │
+                              │  Code Fixer       │ CREDITS
+                              │  (modify files,   │
+                              │   NO commit)      │
                               └────────┬─────────┘
                                        │
+                                       ▼
+                              ┌──────────────────┐
+                              │  Independent      │ CREDITS
+                              │  Code Reviewer    │
+                              │  (approve/reject) │
+                              └────────┬─────────┘
+                                       │
+                        ┌──────────────┼──────────────┐
+                        ▼              │              ▼
+                 ┌──────────┐          │       ┌──────────┐
+                 │ REJECTED │          │       │ APPROVED │
+                 │ discard  │          │       │ proceed  │
+                 │ + notify │          │       └────┬─────┘
+                 └──────────┘          │            │
+                                       │            ▼
                               ┌────────┼────────┐
                               ▼        ▼        ▼
                         ┌──────┐ ┌────────┐ ┌──────┐
@@ -245,8 +327,24 @@ Speed:     <2s per comment
                            └─────────┼─────────┘
                                      ▼
                            ┌──────────────────┐
-                           │  Push + Reply     │
+                           │  Commit + Push    │
+                           │  + Reply on PR    │
                            │  + Linear Update  │
                            │  + Metrics Log    │
+                           └────────┬─────────┘
+                                    │
+                                    ▼
+                           ┌──────────────────┐
+                           │  CI Pipeline      │
+                           │  Observation      │
+                           │  (watch → fix →   │
+                           │   push, ≤5 tries) │
+                           └────────┬─────────┘
+                                    │ all green
+                                    ▼
+                           ┌──────────────────┐
+                           │  Move Linear      │  FREE
+                           │  Ticket →         │
+                           │  "Code Review"    │
                            └──────────────────┘
 ```

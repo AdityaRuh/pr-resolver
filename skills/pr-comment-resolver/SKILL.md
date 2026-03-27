@@ -49,9 +49,9 @@ Before writing any code:
 | Approval (`LGTM`, `looks good`) | Skip — no action needed | ❌ No |
 | Disagreement (`I disagree`, `not sure about`) | Flag to human via Telegram | ❌ No |
 
-### Step 2.5: Assess Confidence & Risk
+### Step 2.5: Assess Confidence & Risk (for logging only)
 
-Before making any change, output your assessment:
+Output your assessment:
 
 ```
 CONFIDENCE: HIGH|MEDIUM|LOW
@@ -59,12 +59,11 @@ RISK: LOW|MEDIUM|HIGH
 REASON: <1-line explanation>
 ```
 
-| Confidence | Risk | Action |
-|-----------|------|--------|
-| HIGH | LOW | Auto-push with 🟢 badge |
-| MEDIUM | LOW/MEDIUM | Push with `[needs-review]` prefix 🟡 |
-| LOW | any | Don't push, output NEEDS_CLARIFICATION 🔴 |
-| any | HIGH | Don't push, output NEEDS_CLARIFICATION 🔴 |
+These scores are logged for metrics but do NOT gate the push. The actual gates are:
+1. **Independent Reviewer** — checks if the change breaks existing functionality or introduces bugs. If no impact → approved.
+2. **CI Pipeline** — after push, the bot watches the pipeline until all checks are green. If tests fail, the bot auto-fixes and pushes again (up to 5 attempts).
+
+Only output `NEEDS_CLARIFICATION` if the comment is genuinely ambiguous and you cannot determine what change to make.
 
 ### Step 3: Make the Fix
 
@@ -101,15 +100,18 @@ npm test
 
 **If ANY check fails → do NOT commit. Report what failed.**
 
-### Step 5: Commit & Push
+### Step 5: Stage Changes (Do NOT Commit or Push)
 
-```bash
-git add <only-changed-files>
-git commit -m "fix: resolve review — <1-line summary>"
-git push origin <pr-branch>
+After making your changes and validating they pass:
+
+1. **Leave the modified files on disk** — do NOT run `git add`, `git commit`, or `git push`
+2. The orchestrator script will handle committing and pushing after an independent review step
+3. If you need to revert your changes (e.g., tests failed), run `git checkout -- .`
+
 ```
-
-Never `git add .` — only add specific files you changed.
+IMPORTANT: Your job ends at modifying files + running tests.
+The orchestrator handles: git add → git commit → independent review → git push
+```
 
 ### Step 6: Reply on PR
 
@@ -167,6 +169,20 @@ Break into steps. Fix each part in a single commit. Reply addressing each point.
 
 ### Merge conflict after fix
 Don't resolve merge conflicts. Flag to Telegram: "PR #{number} has merge conflicts after fix attempt."
+
+## Handling CI Failure Logs [NEW]
+
+When you are provided with CI failure logs instead of a review comment:
+1.  **Analyze the Logs**: Focus on keywords like `error`, `failed`, `exception`, `FAIL`, or stack traces.
+2.  **Locate the Error**: Identify which file and which line caused the failure.
+3.  **Correlate**: Look at your recent changes in the PR diff to see if your fix introduced a syntax error, broke a test, or missed a dependency.
+4.  **Fix and Validate**: Apply the necessary corrections and ensure you run local tests to double-check the logic.
+5.  **Output Format**: Same as standard fixes (SUMMARY, CONFIDENCE, RISK).
+
+Your priority is to get the build status to GREEN.
+- Fix ALL errors identified in the provided logs.
+- If the error is unrelated to the PR, mention it in the SUMMARY but try to fix it if it's within your repo access.
+- If you cannot find the cause, output **FAILED: Could not identify root cause from logs.**
 
 ## GitHub API Patterns
 
