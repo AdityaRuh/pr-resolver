@@ -67,16 +67,6 @@ LLM_REVIEW_TIMEOUT=120    # Reviewer agent — assess fixer output
 MAX_RETRIES=2
 RETRY_BACKOFF_BASE=30  # seconds
 
-# Monitored repos (can be overridden by monitored-repos.json)
-DEFAULT_REPOS=(
-    "ruh-ai/strapi-service"
-    "ruh-ai/hubspot-mcp"
-    "ruh-ai/salesforce-mcp"
-    "ruh-ai/sdr-backend"
-    "ruh-ai/inbox-rotation-service"
-    "ruh-ai/sdr-management-mcp"
-)
-
 ###############################################################################
 # Logging
 ###############################################################################
