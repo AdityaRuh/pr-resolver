@@ -4,7 +4,7 @@
 
 | Agent | Role | Trigger | Cost |
 |-------|------|---------|------|
-| Linear State Poller | Poll Linear for 'Require Changes' tickets | Every 30 min | FREE |
+| Linear State Poller | Poll Linear for 'In Development' tickets | Every 30 min | FREE |
 | Comment Classifier | Classify comment intent (regex + LLM) | Every comment | LLM Credits (fast model) |
 | Agent Command Handler | Process /agent override commands | AGENT_COMMAND intent | FREE |
 | Context Summarizer | Summarize Linear ticket via LLM | Every PR with ticket branch | LLM Credits (fast model) |
@@ -259,7 +259,7 @@ Purpose:   Automatically moves the Linear ticket to "Code Review" state
 ```
                     ┌──────────────────┐
                     │  Linear Tickets  │
-                    │(Require Changes) │
+                    │(In Development) │
                     └────────┬─────────┘
                              │ poll every 30 min
                              ▼

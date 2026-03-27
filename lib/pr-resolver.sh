@@ -52,7 +52,7 @@ BOT_GITHUB_USER="${BOT_GITHUB_USER:-AdityaRuh}"
 
 # Linear integration
 LINEAR_API_KEY="${LINEAR_API_KEY:-}"
-LINEAR_TRIGGER_STATE="Require Changes"
+LINEAR_TRIGGER_STATE="In Development"
 
 # Rate limits
 MAX_FIXES_PER_PR=3
