@@ -73,5 +73,216 @@
         }
       ]
     }
+  },
+  "ruh-ai/ruh-app-fe": {
+    "819": {
+      "last_checked": "2026-03-31T07:29:04Z",
+      "processed_comment_ids": [
+        4153206978
+      ],
+      "actions_taken": [
+        {
+          "comment_id": 4153206978,
+          "intent": "UNKNOWN",
+          "action": "skipped",
+          "commit": "",
+          "timestamp": "2026-03-31T05:37:15Z"
+        },
+        {
+          "comment_id": 4153206978,
+          "intent": "UNKNOWN",
+          "action": "skipped",
+          "commit": "",
+          "timestamp": "2026-03-31T07:29:04Z"
+        }
+      ],
+      "resolved": [],
+      "pending": [],
+      "failed": []
+    },
+    "814": {
+      "last_checked": "2026-03-31T08:33:39Z",
+      "processed_comment_ids": [
+        2997117560,
+        2997117565,
+        2997117575,
+        4137489155,
+        4139386720,
+        4139595949,
+        4140483985,
+        4140516192,
+        4140886304,
+        4146981785,
+        4146984430,
+        4146995117,
+        4146995555
+      ],
+      "actions_taken": [
+        {
+          "comment_id": 2997117560,
+          "intent": "CODE_CHANGE",
+          "action": "flagged",
+          "commit": "",
+          "timestamp": "2026-03-31T05:44:33Z"
+        },
+        {
+          "comment_id": 2997117565,
+          "intent": "CODE_CHANGE",
+          "action": "flagged",
+          "commit": "",
+          "timestamp": "2026-03-31T05:45:42Z"
+        },
+        {
+          "comment_id": 2997117575,
+          "intent": "CODE_CHANGE",
+          "action": "ci_failing",
+          "commit": "44353aa",
+          "timestamp": "2026-03-31T05:49:25Z"
+        },
+        {
+          "comment_id": 2997117575,
+          "intent": "CODE_CHANGE",
+          "action": "ci_failing",
+          "commit": "f5b6bac",
+          "timestamp": "2026-03-31T05:54:45Z"
+        },
+        {
+          "comment_id": 2997117575,
+          "intent": "CODE_CHANGE",
+          "action": "reviewer_blocked",
+          "commit": "",
+          "timestamp": "2026-03-31T05:58:25Z"
+        },
+        {
+          "comment_id": 4139595949,
+          "intent": "UNKNOWN",
+          "action": "skipped",
+          "commit": "",
+          "timestamp": "2026-03-31T05:58:54Z"
+        },
+        {
+          "comment_id": 4137489155,
+          "intent": "UNKNOWN",
+          "action": "skipped",
+          "commit": "",
+          "timestamp": "2026-03-31T05:59:05Z"
+        },
+        {
+          "comment_id": 4140483985,
+          "intent": "UNKNOWN",
+          "action": "skipped",
+          "commit": "",
+          "timestamp": "2026-03-31T05:59:22Z"
+        },
+        {
+          "comment_id": 4139386720,
+          "intent": "UNKNOWN",
+          "action": "skipped",
+          "commit": "",
+          "timestamp": "2026-03-31T05:59:33Z"
+        },
+        {
+          "comment_id": 4140516192,
+          "intent": "UNKNOWN",
+          "action": "skipped",
+          "commit": "",
+          "timestamp": "2026-03-31T05:59:46Z"
+        },
+        {
+          "comment_id": 4140516192,
+          "intent": "UNKNOWN",
+          "action": "skipped",
+          "commit": "",
+          "timestamp": "2026-03-31T06:00:02Z"
+        },
+        {
+          "comment_id": 4137489155,
+          "intent": "UNKNOWN",
+          "action": "skipped",
+          "commit": "",
+          "timestamp": "2026-03-31T07:29:55Z"
+        },
+        {
+          "comment_id": 4139386720,
+          "intent": "UNKNOWN",
+          "action": "skipped",
+          "commit": "",
+          "timestamp": "2026-03-31T07:30:25Z"
+        },
+        {
+          "comment_id": 4139595949,
+          "intent": "UNKNOWN",
+          "action": "skipped",
+          "commit": "",
+          "timestamp": "2026-03-31T07:30:52Z"
+        },
+        {
+          "comment_id": 4140483985,
+          "intent": "UNKNOWN",
+          "action": "skipped",
+          "commit": "",
+          "timestamp": "2026-03-31T07:31:17Z"
+        },
+        {
+          "comment_id": 4140516192,
+          "intent": "UNKNOWN",
+          "action": "skipped",
+          "commit": "",
+          "timestamp": "2026-03-31T07:31:38Z"
+        },
+        {
+          "comment_id": 4140886304,
+          "intent": "EXPLICIT_REQUEST",
+          "action": "ci_failing",
+          "commit": "c5ab320",
+          "timestamp": "2026-03-31T08:33:39Z"
+        }
+      ],
+      "resolved": [
+        4140886304,
+        4146984430
+      ],
+      "pending": [],
+      "failed": []
+    }
+  },
+  "ruh-ai/inbox-rotation-service": {
+    "64": {
+      "last_checked": "2026-03-31T09:46:49Z",
+      "processed_comment_ids": [
+        4018348800,
+        4019315880
+      ],
+      "actions_taken": [
+        {
+          "comment_id": 4018348800,
+          "intent": "UNKNOWN",
+          "action": "skipped",
+          "commit": "",
+          "timestamp": "2026-03-31T09:27:59Z"
+        },
+        {
+          "comment_id": 4019315880,
+          "intent": "CODE_CHANGE",
+          "action": "timeout",
+          "commit": "",
+          "timestamp": "2026-03-31T09:38:36Z"
+        },
+        {
+          "comment_id": 4019315880,
+          "intent": "CODE_CHANGE",
+          "action": "fixed",
+          "commit": "efbfb392e59edcc888813dd84e053c0257b270ad",
+          "timestamp": "2026-03-31T09:46:49Z"
+        }
+      ],
+      "resolved": [
+        4019315880
+      ],
+      "pending": [],
+      "failed": [
+        4019315880
+      ]
+    }
   }
 }

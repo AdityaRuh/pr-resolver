@@ -92,11 +92,20 @@ log() {
 tg_send() {
     local text="$1"
     [[ -z "$TELEGRAM_BOT_TOKEN" || -z "$TELEGRAM_CHAT_ID" ]] && return 0
-    curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+    # Try with Markdown first, fall back to plain text if parse error
+    local response
+    response=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
         -d chat_id="$TELEGRAM_CHAT_ID" \
         -d parse_mode="Markdown" \
-        -d text="$text" \
-        --max-time 10 >/dev/null 2>&1 || true
+        --data-urlencode "text=${text}" \
+        --max-time 10 2>/dev/null)
+    if echo "$response" | grep -q '"ok":false'; then
+        # Fallback: plain text, no markdown
+        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="$TELEGRAM_CHAT_ID" \
+            --data-urlencode "text=${text}" \
+            --max-time 10 >/dev/null 2>&1 || true
+    fi
 }
 
 ###############################################################################
@@ -1620,7 +1629,7 @@ Polling Linear for \`${LINEAR_TRIGGER_STATE}\` tickets..."
         log "No tickets found in '${LINEAR_TRIGGER_STATE}' state with attached PRs."
         record_metric "cycle_complete"
         # 🔔 Notify: nothing to do (HEARTBEAT_OK equivalent)
-        tg_send "✅ *PR Resolver* — No tickets in \`${LINEAR_TRIGGER_STATE}\` with open PRs. All quiet. (HEARTBEAT\_OK)"
+        tg_send "✅ *PR Resolver* — No tickets in '${LINEAR_TRIGGER_STATE}' with open PRs. All quiet. (HEARTBEAT_OK)"
         return 0
     fi
 
