@@ -65,7 +65,67 @@ These scores are logged for metrics but do NOT gate the push. The actual gates a
 
 Only output `NEEDS_CLARIFICATION` if the comment is genuinely ambiguous and you cannot determine what change to make.
 
-### Step 3: Make the Fix
+### Step 3: Explore Codebase (before making changes)
+
+Before touching any code, understand the project structure:
+
+```bash
+# Map project structure (excluding noise)
+find <working_dir> -maxdepth 3 -type f | grep -v node_modules | grep -v .git | grep -v dist
+
+# Search for relevant patterns/keywords from the comment
+grep -r "<keyword>" <working_dir> --include="*.ts" --include="*.js" --include="*.py" -l
+```
+
+Determine:
+- Files to modify and modules affected
+- Existing patterns and conventions
+- Package structure (for monorepos)
+
+### Step 4: Create a Plan
+
+Before implementing, create a structured plan:
+
+```
+## Plan for <TICKET-ID>
+
+Files to modify:
+- path/file.ts — reason
+
+Files to create:
+- new-file.ts — reason (only if explicitly asked)
+
+Approach:
+- summary explanation
+
+Risks / Assumptions:
+- list any assumptions
+```
+
+### Step 5: Prepare Working Branch (MANDATORY)
+
+Ensure you are on a clean, up-to-date branch:
+
+```bash
+cd <working_dir>
+git fetch origin
+git stash
+git checkout dev
+git pull origin dev              # ← NEVER SKIP THIS
+BRANCH_NAME="<branch-from-PR>"
+git checkout -B "$BRANCH_NAME" "origin/$BRANCH_NAME" 2>/dev/null || git checkout "$BRANCH_NAME"
+git merge dev
+```
+
+🚨 **CRITICAL:** Never skip `git pull origin dev` — prevents stale code, avoids merge conflicts.
+
+Branch handling:
+- Remote exists → sync with origin → proceed
+- Local only + clean → reuse
+- Local only + dirty → ask before proceeding
+- Does not exist → create new from latest dev
+
+### Step 6: Make the Fix
 
 Rules for code changes:
 - **One commit per comment** — don't batch unrelated fixes
@@ -73,10 +133,12 @@ Rules for code changes:
 - **Preserve existing style** — match indentation, naming, patterns
 - **Read the test file first** — understand what's already tested
 - **Never delete tests** — only add or modify
+- **Make minimal changes** — smallest diff that resolves the comment
+- **Avoid touching:** `.env` / secrets / build artifacts / `node_modules`
 
-### Step 4: Validate
+### Step 7: Validate
 
-Before committing, ALWAYS run:
+Before staging, ALWAYS run:
 
 **Python repos:**
 ```bash
@@ -98,9 +160,9 @@ npx tsc --noEmit 2>/dev/null || true
 npm test
 ```
 
-**If ANY check fails → do NOT commit. Report what failed.**
+**If ANY check fails → do NOT stage. Report what failed.**
 
-### Step 5: Stage Changes (Do NOT Commit or Push)
+### Step 8: Stage Changes (Do NOT Commit or Push)
 
 After making your changes and validating they pass:
 
@@ -113,7 +175,7 @@ IMPORTANT: Your job ends at modifying files + running tests.
 The orchestrator handles: git add → git commit → independent review → git push
 ```
 
-### Step 6: Reply on PR
+### Step 9: Reply on PR
 
 Use the appropriate template:
 
@@ -123,7 +185,8 @@ Use the appropriate template:
 
 **File:** `src/services/userService.ts`
 **Change:** Added null check before accessing response.data (line 45)
-**Tests:** All 142 tests passing ✅
+**Reviewer:** ✅ No impact on existing functionality
+**CI Pipeline:** 🟢 All checks green
 
 — PR Resolver (automated)
 ```
@@ -139,19 +202,24 @@ Use the appropriate template:
 
 ### DO
 - Read full file context (not just the diff hunk)
+- Explore codebase structure before making changes
 - Check if the suggested change already exists elsewhere in the file
 - Match the repo's existing code style
 - Run the specific test file for the changed code, not just `pytest`
 - Reply even if no code change needed (acknowledge the comment)
+- Always pull latest `dev` before branching
 
 ### DON'T
 - Rewrite large sections of code
 - Add imports that aren't used
 - Change function signatures without updating all callers
-- Create new files to resolve a comment
+- Create new files to resolve a comment (unless explicitly asked)
 - Respond to bot-generated comments (CI bots, coverage bots)
 - Respond to your own comments (infinite loop!)
 - Make optimistic changes ("while I'm here, let me also...")
+- Skip `git pull origin dev`
+- Start coding without exploring the codebase first
+- Touch files outside the PR diff
 
 ## Edge Cases
 
@@ -170,7 +238,7 @@ Break into steps. Fix each part in a single commit. Reply addressing each point.
 ### Merge conflict after fix
 Don't resolve merge conflicts. Flag to Telegram: "PR #{number} has merge conflicts after fix attempt."
 
-## Handling CI Failure Logs [NEW]
+## Handling CI Failure Logs
 
 When you are provided with CI failure logs instead of a review comment:
 1.  **Analyze the Logs**: Focus on keywords like `error`, `failed`, `exception`, `FAIL`, or stack traces.

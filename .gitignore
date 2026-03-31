@@ -1,0 +1,35 @@
+# Environment (contains secrets)
+.env
+
+# State files (runtime data, not source)
+state/processed-comments.json
+state/fix-signatures.json
+state/budget-tracker.json
+state/.pr-resolver.lock
+state/.tmp-*
+
+# Logs and metrics (runtime data)
+logs/*.log
+logs/pr-resolve-*.log
+metrics/metrics.json
+
+# Editor
+*.swp
+*.swo
+*~
+*.save
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OpenClaw workspace state
+.openclaw/workspace-state.json

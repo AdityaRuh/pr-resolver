@@ -1,20 +1,30 @@
 #!/usr/bin/env bash
-# pr-resolver.sh — PR Comment Resolver Daemon (v2)
+# pr-resolver.sh — Ticket-Driven PR Resolver (v3)
 #
-# Polls GitHub for new PR comments every 30 minutes.
-# Classifies intent (FREE), resolves via OpenClaw (credits only when needed).
+# Polls Linear for "In Development" tickets every 30 minutes.
+# Identifies associated PRs, fetches comments, classifies intent,
+# resolves via OpenClaw (credits only when needed).
 #
-# v2 Enhancements:
+# v3 Features:
+#   - Linear ticket-driven polling (not GitHub-first)
+#   - Rich ticket context (acceptance criteria, linked PRs, comments)
+#   - LLM-backed context summarization (fast model)
+#   - Codebase exploration before fixing
+#   - Planning phase with structured approach
+#   - Mandatory branch preparation (always pull dev)
 #   - Diff-aware context (only relevant files passed to agent)
+#   - Independent code reviewer (impact-focused, up to 3 retry cycles)
+#   - CI pipeline observation + auto-repair (up to 5 attempts)
 #   - Idempotency via fix signatures (hash-based dedup)
 #   - Confidence + risk scoring before committing
 #   - Partial fix tracking (resolved/pending/failed per PR)
 #   - Retry with exponential backoff (transient vs real failures)
 #   - Conflict handling (rebase before push)
-#   - Human override commands (/agent ignore|retry|force-fix|explain)
-#   - Rich Linear context (acceptance criteria, linked PRs, comments)
+#   - Human override commands (/agent ignore|retry|force-fix|explain|pause)
 #   - Budget guards (per-hour, per-cycle, per-PR limits)
 #   - Observability metrics (success rate, fix time, failure reasons)
+#   - Linear state transitions (In Development → Code Review)
+#   - PR creation when no PR exists for a ticket
 #
 # Usage:
 #   Single run:  bash pr-resolver.sh
