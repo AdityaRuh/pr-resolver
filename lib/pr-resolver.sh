@@ -1594,8 +1594,15 @@ run_cycle() {
     log "Polling Linear state: '${LINEAR_TRIGGER_STATE}'"
     log "=========================================="
 
+    # 🔔 Notify: cycle started
+    local cycle_time
+    cycle_time=$(date -u '+%H:%M UTC')
+    tg_send "🤖 *PR Resolver started* — ${cycle_time}
+Polling Linear for \`${LINEAR_TRIGGER_STATE}\` tickets..."
+
     if [[ -z "$LINEAR_API_KEY" ]]; then
         log "ERROR: LINEAR_API_KEY not set. Cannot poll Linear for issues."
+        tg_send "❌ *PR Resolver error* — LINEAR\_API\_KEY not set. Cannot poll Linear."
         return 1
     fi
 
@@ -1603,20 +1610,36 @@ run_cycle() {
     if ! check_hourly_budget; then
         log "Hourly budget exhausted, stopping cycle"
         record_metric "cycle_complete"
+        tg_send "⚠️ *PR Resolver* — Hourly budget exhausted. Skipping this cycle."
         return 0
     fi
 
     local issues_data
     issues_data=$(linear_get_issues_by_state "$LINEAR_TRIGGER_STATE")
-    [[ -z "$issues_data" ]] && {
+    if [[ -z "$issues_data" ]]; then
         log "No tickets found in '${LINEAR_TRIGGER_STATE}' state with attached PRs."
         record_metric "cycle_complete"
+        # 🔔 Notify: nothing to do (HEARTBEAT_OK equivalent)
+        tg_send "✅ *PR Resolver* — No tickets in \`${LINEAR_TRIGGER_STATE}\` with open PRs. All quiet. (HEARTBEAT\_OK)"
         return 0
-    }
+    fi
 
     # Format from linear_get_issues_by_state:
     # TicketID|RepoName|PRNumber|BranchName|TicketTitle
     # Wait: The RepoName includes org, e.g. ruh-ai/strapi-service.
+
+    # 🔔 Notify: tickets found (collect all first for a single summary message)
+    local ticket_list=""
+    while IFS='|' read -r ticket_id repo pr_number branch ticket_title; do
+        [[ -z "$pr_number" || -z "$repo" ]] && continue
+        ticket_list+="• \`${ticket_id}\` — ${ticket_title} (${repo} PR #${pr_number})\n"
+    done <<< "$issues_data"
+
+    if [[ -n "$ticket_list" ]]; then
+        tg_send "📋 *PR Resolver found tickets:*
+${ticket_list}
+Starting work..."
+    fi
 
     while IFS='|' read -r ticket_id repo pr_number branch ticket_title; do
         [[ -z "$pr_number" || -z "$repo" ]] && continue
@@ -1659,11 +1682,16 @@ run_cycle() {
     log "Metrics: $(get_metrics_summary)"
     log "=========================================="
 
-    # Summary to Telegram (only if actions taken)
+    # 🔔 Notify: cycle done (always, with summary)
+    local metrics_summary
+    metrics_summary=$(get_metrics_summary)
     if [[ "${TOTAL_FIXES:-0}" -gt 0 ]]; then
-        tg_send "🔧 *PR Resolver Summary*
-Fixes applied: ${TOTAL_FIXES}
-$(get_metrics_summary)"
+        tg_send "✅ *PR Resolver done*
+Fixes applied this cycle: *${TOTAL_FIXES}*
+${metrics_summary}"
+    else
+        tg_send "✅ *PR Resolver done* — Tickets were found but no new fixes applied this cycle (comments may already be resolved or skipped).
+${metrics_summary}"
     fi
 }
 

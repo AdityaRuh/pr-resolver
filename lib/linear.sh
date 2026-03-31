@@ -81,8 +81,10 @@ Ticket data:
 SUMMARY:"
 
     local summary
-    summary=$(timeout "${LLM_SUMMARIZE_TIMEOUT:-20}" openclaw agent \
-        --agent pr-resolver \
+    local summarize_session_id="pr-summarize-$(date +%s)-$$-${RANDOM}"
+    summary=$(timeout "${LLM_SUMMARIZE_TIMEOUT:-20}" openclaw agent --local \
+        \
+        --session-id "$summarize_session_id" \
         --message "$summarize_prompt" \
         --timeout "${LLM_SUMMARIZE_TIMEOUT:-20}" \
         2>/dev/null) || true
@@ -104,51 +106,52 @@ linear_get_issues_by_state() {
     local state_name="$1"
     [[ -z "$state_name" ]] && return 1
 
-    local query='
+    # Step 1: Fetch all matching issue identifiers (assigned to me, in given state)
+    local list_query='
     {
-      issues(filter: { state: { name: { eq: "'"$state_name"'" } } }) {
+      issues(filter: {
+        state: { name: { eq: "'"$state_name"'" } },
+        assignee: { email: { eq: "aditya@ruh.ai" } }
+      }) {
         nodes {
           identifier
           title
           description
           branchName
-          attachments {
-            nodes {
-              sourceType
-              url
-            }
+          attachments(first: 25) {
+            nodes { sourceType url }
           }
-          comments(last: 5) {
-            nodes {
-              body
-            }
+          comments(first: 50) {
+            nodes { body user { name } }
           }
         }
       }
     }'
 
     local response
-    response=$(linear_graphql "$query") || return 1
+    response=$(linear_graphql "$list_query") || return 1
 
     # Output Format: TicketID|RepoName|PRNumber|BranchName|TicketTitle
-    # We scan description, comments, and attachments for GitHub PR URLs
+    #
+    # PR source: ONLY the latest comment by shivam@ruh.ai (Sentinel PR Review Bot).
+    # The Sentinel bot posts PR URLs in the format:
+    #   "PR: https://github.com/org/repo/pull/NUMBER"
+    # We find the most recent such comment and extract the PR URL from it.
     echo "$response" | jq -r '
       .data.issues.nodes[] |
       .identifier as $ticketId |
       .title as $title |
       .branchName as $branch |
-      # Collect description, all comment bodies, and all attachment URLs
-      [
-        .description,
-        (.comments.nodes[].body // empty),
-        (.attachments.nodes[].url // empty)
-      ] |
-      # Join them into one text block and scan for GitHub PR URLs
-      join(" ") |
-      scan("(?:https?://)?(?:www\\.)?github\\.com/[^/]+/[^/]+/pull/[0-9]+") |
-      # Capture the components from each found URL
-      capture("(?:https?://)?(?:www\\.)?github\\.com/(?<org>[^/]+)/(?<repo>[^/]+)/pull/(?<pr>[0-9]+)") |
-      "\( $ticketId )|\( .org )/\( .repo )|\( .pr )|\( $branch // "" )|\( $title )"
+      # Get the latest comment by shivam@ruh.ai (comments are ordered oldest-first, so last = newest)
+      ([ .comments.nodes[] | select(.user.name == "shivam@ruh.ai") ] | last) as $sentinelComment |
+      # Skip ticket if no Sentinel comment found
+      if $sentinelComment == null then empty else
+        ($sentinelComment.body |
+          scan("https?://(?:www\\.)?github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+") |
+          capture("https?://(?:www\\.)?github\\.com/(?<org>[A-Za-z0-9_.-]+)/(?<repo>[A-Za-z0-9_.-]+)/pull/(?<pr>[0-9]+)") |
+          "\($ticketId)|\(.org)/\(.repo)|\(.pr)|\($branch // "")|\($title)"
+        )
+      end
     ' 2>/dev/null | sort -u
 }
 
@@ -328,7 +331,7 @@ EOF
 }
 
 ###############################################################################
-# Post a comment on a Linear issue — uses ClawHub skill
+# Post a comment on a Linear issue — direct GraphQL (ClawHub skill not required)
 ###############################################################################
 
 linear_post_comment() {
@@ -337,15 +340,30 @@ linear_post_comment() {
     [[ -z "$ticket_id" || -z "$comment_body" ]] && return 1
     [[ -z "${LINEAR_API_KEY:-}" ]] && return 1
 
-    local result
-    result=$(linear_cli comment "$ticket_id" "$comment_body") || return 1
+    # Step 1: Resolve ticket identifier to UUID
+    local issue_data issue_uuid
+    issue_data=$(curl -s -X POST "https://api.linear.app/graphql" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: ${LINEAR_API_KEY}" \
+        -d "{\"query\": \"{ issue(id: \\\"${ticket_id}\\\") { id } }\"}" \
+        --max-time 15 2>/dev/null)
+    issue_uuid=$(echo "$issue_data" | jq -r '.data.issue.id // empty')
+    [[ -z "$issue_uuid" ]] && return 1
 
-    # ClawHub skill returns "Comment added" on success
-    echo "$result" | grep -qi "comment added"
+    # Step 2: Create the comment
+    local result
+    result=$(curl -s -X POST "https://api.linear.app/graphql" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: ${LINEAR_API_KEY}" \
+        -d "$(jq -n --arg issueId "$issue_uuid" --arg body "$comment_body" \
+            '{query: "mutation CreateComment($issueId: String!, $body: String!) { commentCreate(input: { issueId: $issueId, body: $body }) { success } }", variables: {issueId: $issueId, body: $body}}')" \
+        --max-time 15 2>/dev/null)
+
+    echo "$result" | jq -e '.data.commentCreate.success == true' >/dev/null 2>&1
 }
 
 ###############################################################################
-# Update issue status — uses ClawHub skill
+# Update issue status — direct GraphQL (ClawHub skill not required)
 ###############################################################################
 
 linear_update_status() {
@@ -354,5 +372,37 @@ linear_update_status() {
     [[ -z "$ticket_id" || -z "$new_status" ]] && return 1
     [[ -z "${LINEAR_API_KEY:-}" ]] && return 1
 
-    linear_cli status "$ticket_id" "$new_status" 2>/dev/null || return 1
+    # Step 1: Get the issue's UUID and team name
+    local issue_data
+    issue_data=$(curl -s -X POST "https://api.linear.app/graphql" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: ${LINEAR_API_KEY}" \
+        -d "{\"query\": \"{ issue(id: \\\"${ticket_id}\\\") { id team { id name } } }\"}" \
+        --max-time 15 2>/dev/null)
+
+    local issue_uuid team_id
+    issue_uuid=$(echo "$issue_data" | jq -r '.data.issue.id // empty')
+    team_id=$(echo "$issue_data" | jq -r '.data.issue.team.id // empty')
+    [[ -z "$issue_uuid" || -z "$team_id" ]] && return 1
+
+    # Step 2: Find the workflow state ID for the given name within this team
+    local states_data state_id
+    states_data=$(curl -s -X POST "https://api.linear.app/graphql" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: ${LINEAR_API_KEY}" \
+        -d "{\"query\": \"{ workflowStates(filter: { name: { eq: \\\"${new_status}\\\" }, team: { id: { eq: \\\"${team_id}\\\" } } }) { nodes { id name } } }\"}" \
+        --max-time 15 2>/dev/null)
+
+    state_id=$(echo "$states_data" | jq -r '.data.workflowStates.nodes[0].id // empty')
+    [[ -z "$state_id" ]] && return 1
+
+    # Step 3: Update the issue state
+    local update_result
+    update_result=$(curl -s -X POST "https://api.linear.app/graphql" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: ${LINEAR_API_KEY}" \
+        -d "{\"query\": \"mutation { issueUpdate(id: \\\"${issue_uuid}\\\", input: { stateId: \\\"${state_id}\\\" }) { success } }\"}" \
+        --max-time 15 2>/dev/null)
+
+    echo "$update_result" | jq -e '.data.issueUpdate.success == true' >/dev/null 2>&1
 }
