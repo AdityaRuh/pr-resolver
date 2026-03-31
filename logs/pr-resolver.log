@@ -4942,3 +4942,13 @@
 [2026-03-26 07:00:13 UTC] [pr-resolver] Processing ruh-ai/sdr-management-mcp PR #44: SDR-1248: Add Trigger Delayed Reply Check MCP tool (branch: SDR-1248-responses-sent-after-delay)
 [2026-03-26 07:00:14 UTC] [pr-resolver] Cycle complete: 0 fixes applied
 [2026-03-26 07:00:14 UTC] [pr-resolver] ==========================================
+[2026-03-26 09:57:29 UTC] [pr-resolver] ==========================================
+[2026-03-26 09:57:29 UTC] [pr-resolver] PR Resolver cycle started
+[2026-03-26 09:57:29 UTC] [pr-resolver] ==========================================
+[2026-03-26 09:57:29 UTC] [pr-resolver] Checking ruh-ai/strapi-service...
+[2026-03-26 09:57:29 UTC] [pr-resolver] Processing ruh-ai/strapi-service PR #77: feat: add comprehensive testing infrastructure (Sentinel Deploy) (branch: sentinel/bootstrap-testing)
+[2026-03-27 04:46:18 UTC] [pr-resolver] ==========================================
+[2026-03-27 04:46:18 UTC] [pr-resolver] PR Resolver cycle started (Linear Driven)
+[2026-03-27 04:46:18 UTC] [pr-resolver] Polling Linear state: 'Require changes'
+[2026-03-27 04:46:18 UTC] [pr-resolver] ==========================================
+[2026-03-27 04:46:19 UTC] [pr-resolver] No tickets found in 'Require changes' state with attached PRs.
