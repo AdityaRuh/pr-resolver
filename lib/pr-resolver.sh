@@ -69,8 +69,8 @@ MAX_FIXES_PER_PR=3
 MAX_FIXES_PER_CYCLE=10
 MAX_FIXES_PER_HOUR=20
 OPENCLAW_TIMEOUT=600  # 10 min per comment
-LLM_CLASSIFY_TIMEOUT=15   # Fast model — classify comment intent
-LLM_SUMMARIZE_TIMEOUT=20  # Fast model — summarize Linear ticket
+LLM_CLASSIFY_TIMEOUT=30   # Fast model — classify comment intent
+LLM_SUMMARIZE_TIMEOUT=45  # Fast model — summarize Linear ticket
 LLM_REVIEW_TIMEOUT=120    # Reviewer agent — assess fixer output
 
 # Retry config
@@ -217,8 +217,10 @@ IMPORTANT:
 - The pipeline MUST be green after your fix."
 
     local fixer_output
-    fixer_output=$(timeout 600 openclaw agent \
-        --agent pr-resolver \
+    local ci_session_id="pr-ci-fix-$(date +%s)-$$-${RANDOM}"
+    fixer_output=$(timeout 600 openclaw agent --local \
+        \
+        --session-id "$ci_session_id" \
         --message "$ci_prompt" \
         --timeout 600 2>&1) || {
         log "ERROR: Fixer agent failed or timed out during CI repair."
@@ -484,9 +486,11 @@ Comment to classify:
 
 INTENT:"
 
+    local session_id="pr-classify-$(date +%s)-$$-${RANDOM}"
     local result
-    result=$(timeout "$LLM_CLASSIFY_TIMEOUT" openclaw agent \
-        --agent pr-resolver \
+    result=$(timeout "$LLM_CLASSIFY_TIMEOUT" openclaw agent --local \
+        \
+        --session-id "$session_id" \
         --message "$prompt" \
         --timeout "$LLM_CLASSIFY_TIMEOUT" \
         2>/dev/null | grep -oE '(EXPLICIT_REQUEST|CODE_CHANGE|NITPICK|QUESTION|APPROVAL|SUBJECTIVE|UNKNOWN)' | head -1) || true
@@ -517,8 +521,17 @@ classify_comment() {
     fi
 
     # Skip: CI bot comments (codecov, sonarqube, dependabot, etc.)
-    if echo "$body_lower" | grep -qE '(codecov|sonarqube|dependabot|renovate|github-actions|coverage report)'; then
+    if echo "$body_lower" | grep -qE '(codecov|sonarqube|dependabot|renovate|github-actions|coverage report|cr-gpt|chatgpt-codex|openai_api_key seted)'; then
         echo "CI_BOT"
+        return
+    fi
+
+    # Skip: coverage policy / pragma comments
+    # These require deliberate test authoring — not auto-fixable by the bot.
+    # Matches comments about: # pragma: no cover, coverage drops, missing unit tests
+    # for coverage, P1/P2 coverage annotations, untested paths, etc.
+    if echo "$body_lower" | grep -qE '(pragma[[:space:]]*:[[:space:]]*no[[:space:]]*cover|coverage will drop|coverage enforcement|add unit test|unit tests.*cover|remove.*pragma|pragma.*remove|coverage.*path|untested path|missing.*test.*cover)'; then
+        echo "COVERAGE_POLICY"
         return
     fi
 
@@ -635,9 +648,14 @@ get_pr_details() {
 
 get_review_comments() {
     local repo="$1" pr="$2"
-    # Inline code review comments — output as JSON lines (one object per line)
+    # Inline code review comments (on specific lines)
     gh api "repos/${repo}/pulls/${pr}/comments" \
         --jq '.[] | {id, user: .user.login, path: (.path // ""), line: (.line // .original_line // 0), body}' \
+        2>/dev/null || true
+
+    # PR review body comments (top-level review submissions with a body)
+    gh api "repos/${repo}/pulls/${pr}/reviews" \
+        --jq '.[] | select(.body != null and .body != "") | {id, user: .user.login, path: "", line: 0, body}' \
         2>/dev/null || true
 }
 
@@ -812,8 +830,10 @@ Output EXACTLY one of:
 No other text."
 
     local review_result
-    review_result=$(timeout "$LLM_REVIEW_TIMEOUT" openclaw agent \
-        --agent pr-resolver \
+    local review_session_id="pr-review-$(date +%s)-$$-${RANDOM}"
+    review_result=$(timeout "$LLM_REVIEW_TIMEOUT" openclaw agent --local \
+        \
+        --session-id "$review_session_id" \
         --message "$review_prompt" \
         --timeout "$LLM_REVIEW_TIMEOUT" \
         2>/dev/null | grep -E '^(APPROVED|REJECTED)' | head -1) || true
@@ -974,8 +994,10 @@ Instructions:
     local agent_log="${LOG_DIR}/pr-resolve-${repo_name}-${pr}-${comment_id}.log"
 
     log "Calling OpenClaw fixer agent (timeout: ${OPENCLAW_TIMEOUT}s)..."
-    output=$(cd "$repo_dir" && timeout "$OPENCLAW_TIMEOUT" openclaw agent \
-        --agent pr-resolver \
+    local fixer_session_id="pr-fix-$(date +%s)-$$-${RANDOM}"
+    output=$(cd "$repo_dir" && timeout "$OPENCLAW_TIMEOUT" openclaw agent --local \
+        \
+        --session-id "$fixer_session_id" \
         --message "$prompt" \
         --timeout "$OPENCLAW_TIMEOUT" \
         2>&1 | tee "$agent_log") || exit_code=$?
@@ -1159,9 +1181,11 @@ Instructions:
 8. Only output NEEDS_CLARIFICATION if the comment is genuinely ambiguous and you cannot determine what change to make.
 9. IMPORTANT: Do NOT commit or push. Only modify the files on disk."
 
+        local retry_session_id="pr-retry-$(date +%s)-$$-${RANDOM}"
         local retry_output
-        retry_output=$(timeout "$OPENCLAW_TIMEOUT" openclaw agent \
-            --agent pr-resolver \
+        retry_output=$(timeout "$OPENCLAW_TIMEOUT" openclaw agent --local \
+            \
+            --session-id "$retry_session_id" \
             --message "$retry_prompt" \
             --timeout "$OPENCLAW_TIMEOUT" \
             2>/dev/null) || true
@@ -1404,8 +1428,9 @@ process_pr() {
     get_issue_comments "$repo" "$pr" >> "$all_comments_file" 2>/dev/null
 
     local comment_count
-    comment_count=$(grep -c '{' "$all_comments_file" 2>/dev/null || echo "0")
-    [[ "$comment_count" -eq 0 ]] && {
+    comment_count=$(grep -c '{' "$all_comments_file" 2>/dev/null | tr -d '[:space:]' || echo "0")
+    comment_count="${comment_count##*$'\n'}"  # strip any newlines
+    [[ "${comment_count:-0}" -eq 0 ]] && {
         log "No comments found on PR #${pr}"
         rm -f "$all_comments_file"
         return 0
@@ -1450,7 +1475,7 @@ process_pr() {
         fi
 
         case "$intent" in
-            SELF|CI_BOT|APPROVAL|UNKNOWN)
+            SELF|CI_BOT|APPROVAL|UNKNOWN|COVERAGE_POLICY)
                 mark_comment_processed "$repo" "$pr" "$comment_id" "$intent" "skipped"
                 record_metric "skipped"
                 continue
