@@ -119,27 +119,37 @@ wait_for_pr_checks() {
             return 2 # Timeout
         fi
 
-        # Get check status
+        # Get check status (gh pr checks uses 'state' field, not 'conclusion')
         local checks_json
-        checks_json=$(gh pr checks "$pr" --repo "$repo" --json state,conclusion,name 2>/dev/null) || {
+        checks_json=$(gh pr checks "$pr" --repo "$repo" --json state,name 2>/dev/null) || {
             log "WARNING: Failed to fetch checks for PR #${pr}. Retrying in 30s..."
             sleep 30
             continue
         }
 
-        # Check if all are completed
+        # If no checks configured, treat as success
+        local total_checks
+        total_checks=$(echo "$checks_json" | jq -r 'length' 2>/dev/null || echo "0")
+        if [[ "$total_checks" -eq 0 ]]; then
+            log "CI SUCCESS: No checks configured — treating as green ✅"
+            return 0
+        fi
+
+        # Check if any are still pending/queued/in_progress
         local pending
-        pending=$(echo "$checks_json" | jq -r '[.[] | select(.state != "COMPLETED")] | length')
+        pending=$(echo "$checks_json" | jq -r '[.[] | select(.state == "PENDING" or .state == "QUEUED" or .state == "IN_PROGRESS" or .state == "WAITING" or .state == "REQUESTED")] | length')
         
         if [[ "$pending" -eq 0 ]]; then
-            # All finished. Any failures?
+            # All finished. Any failures? (state-based: FAILURE, TIMED_OUT, ERROR, CANCELLED)
             local failed
-            failed=$(echo "$checks_json" | jq -r '[.[] | select(.conclusion == "FAILURE" or .conclusion == "TIMED_OUT")] | length')
+            failed=$(echo "$checks_json" | jq -r '[.[] | select(.state == "FAILURE" or .state == "TIMED_OUT" or .state == "ERROR" or .state == "CANCELLED" or .state == "ACTION_REQUIRED")] | length')
+            local skipped
+            skipped=$(echo "$checks_json" | jq -r '[.[] | select(.state == "SKIPPED")] | length')
             if [[ "$failed" -gt 0 ]]; then
-                log "CI FAILURE: Finished with ${failed} failing checks."
+                log "CI FAILURE: Finished with ${failed} failing checks (${skipped} skipped)."
                 return 1 # Failed
             fi
-            log "CI SUCCESS: All checks passed! ✅"
+            log "CI SUCCESS: All checks passed! (${skipped} skipped) ✅"
             return 0 # Success
         fi
 
@@ -229,7 +239,16 @@ IMPORTANT:
     fi
 
     log "CI repair APPROVED. Committing and pushing..."
-    git commit -am "chore(bot): resolve CI failure (attempt)"
+    # Use ticket ID for commit message if available (matches repo lint rules)
+    local ci_ticket_id
+    ci_ticket_id=$(echo "$branch" | grep -oE '[A-Z]{1,5}-[0-9]+' | head -1)
+    local ci_commit_msg
+    if [[ -n "$ci_ticket_id" ]]; then
+        ci_commit_msg="${ci_ticket_id} fix CI failure"
+    else
+        ci_commit_msg="fix: resolve CI failure"
+    fi
+    git commit -am "$ci_commit_msg"
     git push origin "$branch" --force-with-lease
     return 0
 }
@@ -1182,16 +1201,19 @@ Instructions:
     # --- COMMIT & PUSH (orchestrated by bash, not the fixer agent) ---
     cd "$repo_dir"
 
-    # Commit message prefix — always "fix" (tests passed = good to push)
-    local commit_prefix="fix"
-    local commit_tag=""
-
     # Extract a one-line summary from fixer output (if provided)
     local fix_summary
     fix_summary=$(echo "$output" | grep -oE 'REASON: .+' | head -1 | sed 's/REASON: *//' | head -c 80)
     [[ -z "$fix_summary" ]] && fix_summary="resolve review comment"
 
-    local commit_msg="${commit_prefix}: ${commit_tag}${fix_summary}"
+    # Commit message format: "<TICKET-ID> <summary>" (matches repo lint rules)
+    # If ticket ID available, prefix with it; otherwise use "fix: <summary>"
+    local commit_msg
+    if [[ -n "$linear_ticket_id" ]]; then
+        commit_msg="${linear_ticket_id} ${fix_summary}"
+    else
+        commit_msg="fix: ${fix_summary}"
+    fi
 
     # Stage only files listed in the PR diff to avoid accidental over-commits
     local files_to_stage
