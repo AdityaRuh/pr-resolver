@@ -228,4 +228,4 @@ And the Linear ticket gets a comment + moves to **Code Review** automatically.
 
 ## Built By
 
-**Hitesh Goyal / Ruh AI** — powered by [OpenClaw](https://openclaw.ai) + Claude Sonnet via OpenRouter.
+**Aditya Singh / Ruh AI** — powered by [OpenClaw](https://openclaw.ai) + Claude Sonnet via OpenRouter.
