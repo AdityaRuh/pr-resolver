@@ -111,7 +111,7 @@ linear_get_issues_by_state() {
     {
       issues(filter: {
         state: { name: { eq: "'"$state_name"'" } },
-        assignee: { email: { eq: "aditya@ruh.ai" } }
+        assignee: { email: { eq: "'"${LINEAR_ASSIGNEE_EMAIL}"'" } }
       }) {
         nodes {
           identifier

@@ -862,7 +862,7 @@ resolve_comment() {
     fix_start_time=$(date +%s)
 
     repo_name=$(echo "$repo" | cut -d/ -f2)
-    repo_dir="/home/aditya/repos/${repo_name}"
+    repo_dir="${REPOS_BASE_DIR:-${HOME}/repos}/${repo_name}"
 
     log "Resolving comment #${comment_id} on ${repo} PR #${pr} (intent: ${intent})"
 
